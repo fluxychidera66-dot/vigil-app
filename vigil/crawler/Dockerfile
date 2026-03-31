@@ -2,7 +2,7 @@ FROM mcr.microsoft.com/playwright:v1.40.0-focal
 
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci --production
+RUN npm install --omit=dev
 RUN npx playwright install chromium --with-deps
 
 COPY . .
