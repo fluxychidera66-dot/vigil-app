@@ -1,0 +1,161 @@
+# ============================================================
+#  Vigil – Docker Compose Extension
+#  Run alongside OpenReplay: docker-compose -f docker-compose.yml -f docker-compose.vigil.yml up -d
+#  Or standalone (Vigil services only): docker-compose -f docker-compose.vigil.yml up -d
+# ============================================================
+
+version: '3.8'
+
+services:
+
+  # ─── Vigil Crawler ────────────────────────────────────────────────────────
+  vigil-crawler:
+    build:
+      context: ./vigil/crawler
+      dockerfile: Dockerfile
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - SUPABASE_BUCKET=${SUPABASE_BUCKET:-vigil-failures}
+      - ALERT_MANAGER_URL=http://vigil-alert-manager:3012
+      - ALERT_THRESHOLD=2
+      - PORT=3010
+      - LOG_LEVEL=info
+    ports:
+      - "3010:3010"
+    depends_on:
+      - redis
+    restart: unless-stopped
+    networks:
+      - vigil-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3010/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ─── Vigil Transaction Runner ─────────────────────────────────────────────
+  vigil-transaction-runner:
+    build:
+      context: ./vigil/transaction-runner
+      dockerfile: Dockerfile
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - SUPABASE_BUCKET=${SUPABASE_BUCKET:-vigil-failures}
+      - ALERT_MANAGER_URL=http://vigil-alert-manager:3012
+      - STEP_TIMEOUT_MS=15000
+      - PORT=3011
+      - LOG_LEVEL=info
+    ports:
+      - "3011:3011"
+    depends_on:
+      - redis
+    restart: unless-stopped
+    networks:
+      - vigil-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3011/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ─── Vigil Alert Manager ──────────────────────────────────────────────────
+  vigil-alert-manager:
+    build:
+      context: ./vigil/alert-manager
+      dockerfile: Dockerfile
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
+      - ALERT_EMAIL=${ALERT_EMAIL}
+      - SMTP_HOST=${SMTP_HOST:-smtp.gmail.com}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASS=${SMTP_PASS}
+      - SMTP_FROM=${SMTP_FROM:-Vigil Alerts <alerts@yourapp.com>}
+      - KEEP_WEBHOOK_URL=${KEEP_WEBHOOK_URL}
+      - KEEP_API_KEY=${KEEP_API_KEY}
+      - DASHBOARD_URL=${DASHBOARD_URL:-http://localhost:3000}
+      - PORT=3012
+    ports:
+      - "3012:3012"
+    restart: unless-stopped
+    networks:
+      - vigil-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3012/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ─── Vigil API ────────────────────────────────────────────────────────────
+  vigil-api:
+    build:
+      context: ./vigil/api
+      dockerfile: Dockerfile
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - JWT_SECRET=${JWT_SECRET}
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}
+      - STRIPE_GROWTH_PRICE_ID=${STRIPE_GROWTH_PRICE_ID}
+      - STRIPE_BUSINESS_PRICE_ID=${STRIPE_BUSINESS_PRICE_ID}
+      - STRIPE_PRO_PRICE_ID=${STRIPE_PRO_PRICE_ID}
+      - DASHBOARD_URL=${DASHBOARD_URL:-http://localhost:3000}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:3000}
+      - VIGIL_API_PORT=3013
+    ports:
+      - "3013:3013"
+    restart: unless-stopped
+    networks:
+      - vigil-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3013/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ─── Prometheus (optional monitoring) ────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./vigil/config/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.enable-lifecycle'
+    ports:
+      - "9090:9090"
+    restart: unless-stopped
+    networks:
+      - vigil-network
+
+  # ─── Grafana (optional dashboards) ───────────────────────────────────────
+  grafana:
+    image: grafana/grafana:latest
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-vigil123}
+    volumes:
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3030:3000"
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+    networks:
+      - vigil-network
+
+networks:
+  vigil-network:
+    driver: bridge
+
+volumes:
+  prometheus_data:
+  grafana_data:
