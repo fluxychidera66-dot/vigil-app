@@ -8,7 +8,6 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 import express from 'express';
-import { createBullBoard } from '@bull-board/api';
 import { Queue, Worker } from 'bullmq';
 import { db } from './db';
 import { CrawlerWorker } from './crawler';

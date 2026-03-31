@@ -37,7 +37,7 @@ export class CrawlerWorker {
       maxRequestsPerCrawl: config.max_pages || 100,
       maxConcurrency: 3,
 
-      async requestHandler({ page, request, enqueueLinks }) {
+      requestHandler: async ({ page, request, enqueueLinks }) => {
         const url = request.url;
         const startTime = Date.now();
 
